@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LoL Match Pipeline</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f3;
+      color: #1a1a18;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #6b6b68;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: #fff;
+      border: 0.5px solid #ddddd8;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    input[type="text"], input[type="number"], select {
+      font-family: inherit;
+      font-size: 14px;
+      border: 0.5px solid #ccccc8;
+      border-radius: 8px;
+      padding: 0 12px;
+      height: 36px;
+      background: #fff;
+      color: #1a1a18;
+      outline: none;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      border-color: #378add;
+      box-shadow: 0 0 0 3px rgba(55,138,221,0.12);
+    }
+    input[type="text"] { flex: 1; min-width: 160px; }
+    input[type="number"] { width: 90px; }
+    select { width: 130px; }
+
+    button {
+      font-family: inherit;
+      font-size: 14px;
+      height: 36px;
+      padding: 0 18px;
+      border-radius: 8px;
+      border: 0.5px solid #ccccc8;
+      background: #fff;
+      color: #1a1a18;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover { background: #f5f5f3; }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.primary {
+      background: #378add;
+      border-color: #378add;
+      color: #fff;
+    }
+    button.primary:hover { background: #2a6fb5; }
+
+    .label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #6b6b68;
+      margin-bottom: 6px;
+    }
+
+    .progress-wrap {
+      display: none;
+      margin-top: 1rem;
+    }
+    .progress-track {
+      height: 4px;
+      background: #e8e8e5;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: #378add;
+      border-radius: 2px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    .progress-label {
+      font-size: 12px;
+      color: #6b6b68;
+      margin-top: 6px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 1.25rem;
+    }
+    .stat {
+      background: #f5f5f3;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .stat-label { font-size: 12px; color: #6b6b68; margin-bottom: 4px; }
+    .stat-value { font-size: 22px; font-weight: 500; }
+    .stat-value.green { color: #3b6d11; }
+    .stat-value.red { color: #a32d2d; }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chart-title { font-size: 15px; font-weight: 500; }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #6b6b68;
+    }
+
+    .chart-wrap { position: relative; height: 320px; }
+
+    .error-msg {
+      color: #a32d2d;
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>LoL match pipeline</h1>
+  <br>
+
+  <div class="card">
+    <div class="label">Riot ID</div>
+    <div class="form-row">
+      <input type="text" id="riot-id" placeholder="YourName#TAG" />
+      <div>
+        <div class="label" style="margin-bottom:4px;">Fetch matches</div>
+        <input type="number" id="num-matches" value="20" min="5" max="100" />
+      </div>
+      <button class="primary" id="run-btn" onclick="startPipeline()">Run pipeline</button>
+    </div>
+    <p class="error-msg" id="error-msg"></p>
+
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+      <p class="progress-label" id="progress-label">Starting...</p>
+    </div>
+  </div>
+
+  <div id="results" class="hidden">
+
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="stat-label">Games analyzed</div>
+        <div class="stat-value" id="s-games">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Wins</div>
+        <div class="stat-value green" id="s-wins">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Overall win rate</div>
+        <div class="stat-value" id="s-wr">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Avg KDA</div>
+        <div class="stat-value" id="s-kda">—</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chart-header">
+        <span class="chart-title">Win rate by hour of day</span>
+        <div class="filter-row">
+          <span>Last</span>
+          <input type="number" id="last-n" value="20" min="1" max="100" style="width:60px;" />
+          <span>games</span>
+          <button onclick="refreshChart()" style="height:30px; padding:0 12px; font-size:13px;">Update</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+      <p style="font-size:12px; color:#6b6b68; margin-top:10px;">
+        Hours with no games are shown as gaps. Times are local to your machine.
+      </p>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+let chart = null;
+let pollInterval = null;
+
+function showError(msg) {
+  const el = document.getElementById("error-msg");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+function hideError() {
+  document.getElementById("error-msg").style.display = "none";
+}
+
+function startPipeline() {
+  hideError();
+  const riotId = document.getElementById("riot-id").value.trim();
+  const numMatches = parseInt(document.getElementById("num-matches").value);
+  const lastN = parseInt(document.getElementById("last-n").value) || numMatches;
+
+  if (!riotId || !riotId.includes("#")) {
+    showError("Enter a valid Riot ID in the format Name#TAG");
+    return;
+  }
+
+  document.getElementById("run-btn").disabled = true;
+  document.getElementById("progress-wrap").style.display = "block";
+  document.getElementById("results").classList.add("hidden");
+
+  fetch("/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ riot_id: riotId, num_matches: numMatches, last_n: lastN })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { showError(d.error); resetUI(); return; }
+    pollInterval = setInterval(pollStatus, 1500);
+  })
+  .catch(() => { showError("Failed to start pipeline."); resetUI(); });
+}
+
+function pollStatus() {
+  fetch("/status")
+    .then(r => r.json())
+    .then(s => {
+      const pct = s.total > 0 ? Math.round(s.progress / s.total * 100) : 0;
+      document.getElementById("progress-bar").style.width = pct + "%";
+      document.getElementById("progress-label").textContent =
+        `Fetching match ${s.progress} of ${s.total}...`;
+
+      if (s.error) {
+        clearInterval(pollInterval);
+        showError(s.error);
+        resetUI();
+      } else if (s.done) {
+        clearInterval(pollInterval);
+        document.getElementById("progress-label").textContent = "Done!";
+        setTimeout(() => {
+          document.getElementById("progress-wrap").style.display = "none";
+          document.getElementById("run-btn").disabled = false;
+          loadData();
+        }, 600);
+      }
+    });
+}
+
+function resetUI() {
+  clearInterval(pollInterval);
+  document.getElementById("run-btn").disabled = false;
+  document.getElementById("progress-wrap").style.display = "none";
+}
+
+function loadData() {
+  const lastN = parseInt(document.getElementById("last-n").value) || 20;
+  fetch(`/data?last_n=${lastN}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { showError(d.error); return; }
+      renderSummary(d.summary);
+      renderChart(d.winrate_by_hour);
+      document.getElementById("results").classList.remove("hidden");
+    });
+}
+
+function refreshChart() {
+  loadData();
+}
+
+function renderSummary(s) {
+  document.getElementById("s-games").textContent = s.games;
+  document.getElementById("s-wins").textContent = s.wins;
+  const wrEl = document.getElementById("s-wr");
+  wrEl.textContent = s.win_rate + "%";
+  wrEl.className = "stat-value " + (s.win_rate >= 50 ? "green" : "red");
+  const kda = s.avg_deaths > 0
+    ? ((s.avg_kills + s.avg_assists) / s.avg_deaths).toFixed(2)
+    : "Perfect";
+  document.getElementById("s-kda").textContent = kda;
+}
+
+function renderChart(data) {
+  const labels = data.map(d => {
+    const h = d.hour;
+    const suffix = h < 12 ? "AM" : "PM";
+    const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${display}${suffix}`;
+  });
+
+  const winRates = data.map(d => d.win_rate);
+  const games = data.map(d => d.games);
+
+  // color each bar: green if >=50, red if <50, gray if no data
+  const barColors = data.map(d => {
+    if (d.win_rate === null) return "rgba(180,178,169,0.4)";
+    return d.win_rate >= 50 ? "rgba(59,109,17,0.75)" : "rgba(163,45,45,0.75)";
+  });
+
+  if (chart) chart.destroy();
+
+  const ctx = document.getElementById("chart").getContext("2d");
+  chart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Win rate %",
+        data: winRates,
+        backgroundColor: barColors,
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => `${items[0].label}`,
+            label: (item) => {
+              const idx = item.dataIndex;
+              if (winRates[idx] === null) return "No games";
+              return [`Win rate: ${winRates[idx]}%`, `Games: ${games[idx]}`];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 11 }, color: "#6b6b68" }
+        },
+        y: {
+          min: 0,
+          max: 100,
+          ticks: {
+            callback: v => v + "%",
+            font: { size: 11 },
+            color: "#6b6b68",
+          },
+          grid: { color: "rgba(0,0,0,0.06)" }
+        }
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
